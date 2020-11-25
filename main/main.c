@@ -15,6 +15,12 @@
 
 #define I2C_MASTER_ACK 0
 #define I2C_MASTER_NACK 1
+/*
+typedef char s8;
+typedef unsigned char u8;
+typedef int s32;
+typedef unsigned int u32;
+*/
 
 void i2c_master_init()
 {
