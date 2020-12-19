@@ -16,6 +16,7 @@
 
 #define I2C_MASTER_ACK 0
 #define I2C_MASTER_NACK 1
+const TickType_t LOOP_DELAY = 600000 / portTICK_PERIOD_MS;
 
 void i2c_master_init()
 {
@@ -95,6 +96,7 @@ void BME280_delay_msek(u32 msek)
 
 void task_bme280_normal_mode(void *ignore)
 {
+        ESP_LOGI(TAG_BME280,"Starting normal mode...");
 	struct bme280_t bme280 = {
 		.bus_write = BME280_I2C_bus_write,
 		.bus_read = BME280_I2C_bus_read,
@@ -118,8 +120,9 @@ void task_bme280_normal_mode(void *ignore)
 
 	com_rslt += bme280_set_power_mode(BME280_NORMAL_MODE);
 	if (com_rslt == SUCCESS) {
+            ESP_LOGI(TAG_BME280,"BME connected with normal mode");
 		while(true) {
-			vTaskDelay(DELAY);
+
 
 			com_rslt = bme280_read_uncomp_pressure_temperature_humidity(
 				&v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32);
@@ -137,6 +140,7 @@ void task_bme280_normal_mode(void *ignore)
 			} else {
 				ESP_LOGE(TAG_BME280, "measure error. code: %d", com_rslt);
 			}
+			vTaskDelay(LOOP_DELAY);
 		}
 	} else {
 		ESP_LOGE(TAG_BME280, "init or setting error. code: %d", com_rslt);
@@ -190,6 +194,6 @@ void app_main(void)
 {
         init();
 	i2c_master_init();
-	xTaskCreate(&task_bme280_normal_mode, "bme280_normal_mode",  2048, NULL, 6, NULL);
+	xTaskCreate(&task_bme280_normal_mode, "bme280_normal_mode",  4048, NULL, 6, NULL);
 	// xTaskCreate(&task_bme280_forced_mode, "bme280_forced_mode",  2048, NULL, 6, NULL);
 }

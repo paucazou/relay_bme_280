@@ -26,6 +26,7 @@
 #include "rom/ets_sys.h"
 #include <stdio.h>
 #include "sdkconfig.h"
+#include "bridge.h"
 
 
 /* HTTP
@@ -190,9 +191,10 @@ void init(void)
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
+    ESP_LOGI(TAG, "ESP wifi set up");
 }
 
-esp_err_t send_data(_bme280_res* results) {
+esp_err_t send_data(const _bme280_res* results) {
 
     // HTTP
     esp_http_client_config_t config = {
@@ -202,9 +204,9 @@ esp_err_t send_data(_bme280_res* results) {
        .port = 8765,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    const char* data_base = "temp=%f&hum=%f&press=%f&source=CONFIG_BME_ID\n"; 
+    const char* data_base = "temp=%f&hum=%f&press=%f&source=%d\n"; 
     char data[200];
-    sprintf(data,data_base,results->temp,results->hum,results->press);
+    sprintf(data,data_base,results->temp,results->hum,results->press,CONFIG_BME_ID);
     printf(data);
     esp_http_client_set_post_field (client,data,strlen(data));
     esp_http_client_set_method(client, HTTP_METHOD_POST);
