@@ -28,6 +28,25 @@
 #include "sdkconfig.h"
 #include "bridge.h"
 
+#define LED_PIN 13
+
+// LED
+
+static void led_blink() {
+    gpio_set_level(LED_PIN,1);
+    vTaskDelay(10/portTICK_PERIOD_MS);
+    gpio_set_level(LED_PIN,0);
+}
+
+static void led_light(bool val) {
+    gpio_set_level(LED_PIN, val);
+}
+
+static void led_pin_init() {
+    gpio_pad_select_gpio(LED_PIN);
+    gpio_set_direction(LED_PIN,GPIO_MODE_OUTPUT);
+}
+
 
 /* HTTP
  */
@@ -89,11 +108,13 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
+        led_light(true);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        led_light(false);
         ESP_LOGI(TAG, "retry to connect to the AP");
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
-        // do nothing
+        led_light(true);
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
@@ -160,7 +181,9 @@ void wifi_init_sta(void)
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "connected to ap SSID:%s",
                  EXAMPLE_ESP_WIFI_SSID);
+        led_light(true);
     } else {
+        led_light(false);
 
         if (bits & WIFI_FAIL_BIT) {
         ESP_LOGI(TAG, "Failed to connect to SSID:%s",
@@ -180,6 +203,7 @@ void wifi_init_sta(void)
 
 void init(void)
 {
+    led_pin_init();
 
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();

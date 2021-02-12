@@ -121,6 +121,12 @@ void task_bme280_normal_mode(void *ignore)
 	com_rslt += bme280_set_power_mode(BME280_NORMAL_MODE);
 	if (com_rslt == SUCCESS) {
             ESP_LOGI(TAG_BME280,"BME connected with normal mode");
+            // discard first result: they are often false
+            com_rslt = bme280_read_uncomp_pressure_temperature_humidity(
+                    &v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32);
+            vTaskDelay(1000);
+            ESP_LOGE(TAG_BME280, "First results discarded");
+
 		while(true) {
 
 
