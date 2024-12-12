@@ -28,7 +28,8 @@
 #include "sdkconfig.h"
 #include "bridge.h"
 
-#define LED_PIN 13
+#define LED_PIN 15
+#define TAG "BMX"
 
 // LED
 
@@ -43,8 +44,38 @@ static void led_light(bool val) {
 }
 
 static void led_pin_init() {
-    gpio_pad_select_gpio(LED_PIN);
+    //gpio_pad_select_gpio(LED_PIN); // deprecated?
+    esp_rom_gpio_pad_select_gpio(LED_PIN);
     gpio_set_direction(LED_PIN,GPIO_MODE_OUTPUT);
+}
+
+// NVS
+
+esp_err_t read_write_nvs_value_str(const char* key, char* fallback) {
+    esp_err_t err;
+    nvs_handle_t handle;
+    err = nvs_open("storage",NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG,"Error (%s) opening NVS handle. Falling back to default SSID and password...",esp_err_to_name(err));
+        return err;
+    } 
+
+    size_t l;
+    err = nvs_get_str(handle, key, fallback, &l);
+    switch (err) {
+        case ESP_OK:
+            break;
+        case ESP_ERR_NVS_NOT_FOUND:
+            // saving fallback
+            nvs_set_str(handle, key, fallback);
+            err = nvs_commit(handle);
+            ESP_LOGI(TAG, "Saving key %s",key);
+            break;
+        default:
+            ESP_LOGE(TAG, "Error (%s) reading key %s",esp_err_to_name(err), key);
+    }
+    nvs_close(handle);
+    return err;
 }
 
 
@@ -78,6 +109,10 @@ esp_err_t _http_event_handle(esp_http_client_event_t *evt)
             break;
         case HTTP_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "HTTP_EVENT_DISCONNECTED");
+            break;
+
+        case HTTP_EVENT_REDIRECT:
+            ESP_LOGI(TAG, "HTTP_EVENT_REDIRECT");
             break;
     }
     return ESP_OK;
@@ -147,10 +182,14 @@ void wifi_init_sta(void)
                                                         NULL,
                                                         &instance_got_ip));
 
+    // load from nvs storage
+    char ssid[33] = EXAMPLE_ESP_WIFI_SSID;
+    char pass[65] = EXAMPLE_ESP_WIFI_PASS;
+    read_write_nvs_value_str("ssid",ssid);
+    read_write_nvs_value_str("pass",pass);
+
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = EXAMPLE_ESP_WIFI_SSID,
-            .password = EXAMPLE_ESP_WIFI_PASS,
             /* Setting a password implies station will connect to all security modes including WEP/WPA.
              * However these modes are deprecated and not advisable to be used. Incase your Access point
              * doesn't support WPA2, these mode can be enabled by commenting below line */
@@ -162,6 +201,8 @@ void wifi_init_sta(void)
             },
         },
     };
+    strncpy((char*)wifi_config.sta.ssid, (char*)&ssid[0], 32);
+    strncpy((char*)wifi_config.sta.password, (char*)&pass[0], 64);
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
     ESP_ERROR_CHECK(esp_wifi_start() );
@@ -201,8 +242,14 @@ void wifi_init_sta(void)
     */
 }
 
+
 void init(void)
 {
+    /* TODO
+     * à sauvegarder : start_hour / end_hour - adresse où envoyer les données
+     * mise à jour date et heure au réveil. Est-il nécessaire de remettre à jour de temps à autres?
+     * un moyen de mettre à jour la date et l'heure et l'adresse
+     */
     led_pin_init();
 
     //Initialize NVS
@@ -219,15 +266,21 @@ void init(void)
 }
 
 esp_err_t send_data(const _bme280_res* results) {
+    char url[200] = "http://palantir"; // default
+    if (read_write_nvs_value_str("url", url) != ESP_OK) {
+        ESP_LOGE(TAG, "URl default: %s",url);
+    }
+    ESP_LOGI(TAG, "URl: %s",url);
 
     // HTTP
     esp_http_client_config_t config = {
        //.url = "http://palantir:8765/update-sensor",
-       .url = "https://househomestuff.000webhostapp.com/update-sensor.php",
+       //.url = "https://househomestuff.000webhostapp.com/update-sensor.php",
        .event_handler = _http_event_handle,
-       .port = 8765,
+       .port = 80,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_http_client_set_url(client, url);
     const char* data_base = "temp=%f&hum=%f&press=%f&source=%d\n"; 
     char data[200];
     sprintf(data,data_base,results->temp,results->hum,results->press,CONFIG_BME_ID);
@@ -237,7 +290,7 @@ esp_err_t send_data(const _bme280_res* results) {
     esp_err_t err = esp_http_client_perform(client);
 
     if (err == ESP_OK) {
-       ESP_LOGI(TAG, "Status = %d, content_length = %d",
+       ESP_LOGI(TAG, "Status = %d, content_length = %" PRId64,
                esp_http_client_get_status_code(client),
                esp_http_client_get_content_length(client));
     }
