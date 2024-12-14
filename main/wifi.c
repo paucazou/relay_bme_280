@@ -266,7 +266,7 @@ void init(void)
 }
 
 esp_err_t send_data(const _bme280_res* results) {
-    char url[200] = "http://palantir"; // default
+    char url[200] = "http://palantir/thermo/update-sensor.php"; // default
     if (read_write_nvs_value_str("url", url) != ESP_OK) {
         ESP_LOGE(TAG, "URl default: %s",url);
     }
@@ -279,8 +279,9 @@ esp_err_t send_data(const _bme280_res* results) {
        .event_handler = _http_event_handle,
        .port = 80,
     };
+    config.url = url;
     esp_http_client_handle_t client = esp_http_client_init(&config);
-    esp_http_client_set_url(client, url);
+    //esp_http_client_set_url(client, url);
     const char* data_base = "temp=%f&hum=%f&press=%f&source=%d\n"; 
     char data[200];
     sprintf(data,data_base,results->temp,results->hum,results->press,CONFIG_BME_ID);

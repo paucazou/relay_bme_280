@@ -120,6 +120,31 @@ enum MSG_FLAG {
     SSID_FLAG
 };
 
+bool is_valid_url(const char* str) {
+    // Check for NULL input
+    if (str == NULL) {
+        return false;
+    }
+
+    // Minimum length check (needs at least 7 characters for "http://")
+    size_t len = strlen(str);
+    if (len <= 8) {
+        return false;
+    }
+
+    // Convert first 4 characters to lowercase for case-insensitive comparison
+    char first_letters[9] = {0};
+    for (int i = 0; i < 8; i++) {
+        first_letters[i] = tolower(str[i]);
+    }
+
+    // Check if starts with "http"
+    if (strncmp(first_letters, "http://", 7) != 0 && strncmp(first_letters, "https://", 8) != 0) {
+        return false;
+    }
+
+    return true;
+}
 
 
 static void udp_server_task(void *pvParameters)
@@ -274,6 +299,11 @@ static void udp_server_task(void *pvParameters)
                         } else {
                             char addr[len];
                             strncpy(addr, &rx_buffer[1], len -1);
+                            if (!is_valid_url(addr)) {
+                                ESP_LOGE(TAG, "'%s' is not a valid url.", addr);
+                                restart_udp_server = true;
+                                break;
+                            }
                             save_string_nvs("adress", addr);
                             ESP_LOGI(TAG, "New adress set: %s", addr);
                             err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
@@ -348,7 +378,8 @@ static void transistor_switch(bool val) {
 
 static bool is_light_on() {
     // true if light is on
-    return !gpio_get_level(TEST_PIN);
+    //return !gpio_get_level(TEST_PIN);
+    return gpio_get_level(TRANSISTOR_PIN);
 }
 
 static void pin_init() {
@@ -358,7 +389,7 @@ static void pin_init() {
 
 // transistor
   esp_rom_gpio_pad_select_gpio(TRANSISTOR_PIN);
-  gpio_set_direction(TRANSISTOR_PIN, GPIO_MODE_OUTPUT);
+  gpio_set_direction(TRANSISTOR_PIN, GPIO_MODE_INPUT_OUTPUT);
   transistor_switch(false);
   // test3d
   esp_rom_gpio_pad_select_gpio(TEST_PIN);
@@ -416,6 +447,8 @@ void light_manager(void *pvParameter) {
         }
     }
     nvs_close(nvsh);
+    ESP_LOGI(TAG, "Period set");
+    print_period(&p);
 
     while (1) {
         if (uxQueueMessagesWaiting(period_queue)) {
@@ -434,6 +467,7 @@ void light_manager(void *pvParameter) {
                 err = nvs_commit(nvsh);
                 ESP_LOGI(TAG, "NVS set period commit: %s",esp_err_to_name(err));
                 nvs_close(nvsh);
+                print_period(&p);
             }
         }
         struct tm* time = fill_time();
@@ -453,43 +487,6 @@ void light_manager(void *pvParameter) {
         sleep(1);
     }
 }
-
-#if 0
-void deprecated_light_manager(void *pvParameter) {
-    struct Period morning = { 7, 0, 9, 0};
-    struct Period evening = { 19, 0, 22, 0 };
-    while (1) {
-        // check that new value has arrived
-        if (uxQueueMessagesWaiting(bool_queue) != 0) {
-            // only one by loop, I'm too lazy
-            bool is_evening;
-            xQueueReceive(bool_queue, &is_evening, 0);
-            xQueueReceive(period_queue, (is_evening? &evening : &morning), 0);
-            ESP_LOGI(TAG, "New period set for %s", (is_evening? "evening":"morning"));
-            print_period((is_evening? &evening : &morning));
-        }
-        struct tm* time = fill_time();
-        if (time->tm_year == 70) {
-            ESP_LOGE(TAG, "Time not yet updated");
-        } else {
-            if ( is_time_in(time, &morning) || is_time_in(time, &evening)) {
-                if ( !is_light_on() ) {
-                    transistor_switch(true);
-                    ESP_LOGI(TAG, "Light on");
-                }
-            } else if ( is_light_on() ) {
-                    transistor_switch(false);
-                    ESP_LOGI(TAG, "Light off");
-            }
-        }
-        sleep(1);
-    }
-
-
-}
-#endif
-
-
 
 void init_udp_and_lamp(void)
 {
