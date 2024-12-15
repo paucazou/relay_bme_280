@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstring>
+#include <cstdarg>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -12,7 +13,7 @@
 int DEBUG = 0;
 
 enum MSG_FLAG {
-    PERIOD_FLAG,
+    PERIOD_FLAG = '0',
     ADRESS_FLAG,
     SSID_FLAG
 };
@@ -51,7 +52,7 @@ void debug(const char *format, ...) {
 
 
 int main(int argc, char *argv[]) {
-    if (argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+    if (argc == 1 || (argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))) {
         std::cout << "Usage: " << argv[0] << " [0/1/2] [[hh:mm] [hh:mm]] [http[s]://...] [SSID PASS]" << std::endl;
         std::cout << std::endl;
         std::cout << "  [0/1]           Select morning or evening period" << std::endl;
@@ -73,13 +74,14 @@ int main(int argc, char *argv[]) {
             }
             break;
         case MSG_FLAG::ADRESS_FLAG:
-            if (argc != 2) {
+            if (argc != 3) {
                 std::cout << "Error: 2 arguments required to send url" << std::endl;
                 return 1;
             }
             break;
         default:
-            std::cout << "Error: Unknow flag " << argv[1] << std::endl;
+            std::cout << "Error: Unknown flag " << argv[1] << std::endl;
+            return 1;
     }
 
     std::string arg1 = argv[1];
@@ -138,9 +140,9 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Msg length: " << msg.length() << std::endl;
 
-    int try = 1;
-    while (try != 0) {
-        std::cout << "Try: " << try << "..." << std::endl;
+    int Try = 1;
+    while (Try != 0) {
+        std::cout << "Try: " << Try << "..." << std::endl;
 
         int sock = socket(AF_INET, SOCK_DGRAM, 0);
         if (sock == -1) {
@@ -170,12 +172,12 @@ int main(int argc, char *argv[]) {
 
         std::string res_str = res;
         if (res_str.find("invalid") != std::string::npos) {
-            try = 0;
+            Try = 0;
             std::cout << "Invalid message. Please check" << std::endl;
         } else if (res_str == msg) {
-            try = 0;
+            Try = 0;
         } else {
-            try++;
+            Try++;
         }
 
         close(sock);
