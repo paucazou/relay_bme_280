@@ -10,10 +10,11 @@
 #define ADDRESS "192.168.1.38"
 #define PORT 3333
 
+// TODO bug si on essaie de mettre 0 comme heure de début
 int DEBUG = 0;
 
 enum MSG_FLAG {
-    PERIOD_FLAG = '0',
+    PERIOD_FLAG,
     ADRESS_FLAG,
     SSID_FLAG
 };
@@ -55,7 +56,7 @@ int main(int argc, char *argv[]) {
     if (argc == 1 || (argc == 2 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))) {
         std::cout << "Usage: " << argv[0] << " [0/1/2] [[hh:mm] [hh:mm]] [http[s]://...] [SSID PASS]" << std::endl;
         std::cout << std::endl;
-        std::cout << "  [0/1]           Select morning or evening period" << std::endl;
+        std::cout << "  [0/1/2]         Select the data you want to send" << std::endl;
         std::cout << "  [hh:mm]         Start of the period between 00:00 and 23:59" << std::endl;
         std::cout << "  [hh:mm]         End of the period between 00:00 and 23:59" << std::endl;
         std::cout << "  [http[s]://...] URl used to update BME datai. Max 200 bytes" << std::endl;
@@ -65,7 +66,9 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    switch (argv[1][0]) {
+    const int flag { atoi(argv[1]) };
+
+    switch (flag) {
         case MSG_FLAG::PERIOD_FLAG:
         case MSG_FLAG::SSID_FLAG:
             if (argc != 4) {
@@ -93,7 +96,7 @@ int main(int argc, char *argv[]) {
     msg += static_cast<char>(stoi(arg1));
 
     // adding args to msg
-    switch (argv[1][0]) {
+    switch (flag) {
         case MSG_FLAG::PERIOD_FLAG:
             {
                 std::string arg3 = argv[3];
@@ -132,8 +135,9 @@ int main(int argc, char *argv[]) {
             {
                 std::string arg3 {argv[3]};
                 msg += format(arg2, arg3);
-                break;
+                std::cout << msg << std::endl;
             }
+            break;
         default:
             std::cout << "Unknown flag." << argv[0] << std::endl;
     }
@@ -171,11 +175,29 @@ int main(int argc, char *argv[]) {
         }
 
         std::string res_str = res;
+        if (flag != MSG_FLAG::PERIOD_FLAG) {
+            std::cout << "Response length: " << strlen(res) << std::endl;
+        }
         if (res_str.find("invalid") != std::string::npos) {
             Try = 0;
             std::cout << "Invalid message. Please check" << std::endl;
         } else if (res_str == msg) {
             Try = 0;
+        } else if (flag == MSG_FLAG::PERIOD_FLAG || flag == MSG_FLAG::SSID_FLAG) {
+            bool is_invalid = false;
+            int x = flag == MSG_FLAG::PERIOD_FLAG ? 5 : 32 + 64 + 1;
+            for (int i = 0; i <= x; i++) {
+                if (res[i] != msg[i]) {
+                    is_invalid = true;
+                    break;
+                }
+            }
+            if (is_invalid) {
+                std::cout << "Invalid value" << std::endl;
+                Try++;
+            } else { 
+                Try = 0;
+            }
         } else {
             Try++;
         }

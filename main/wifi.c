@@ -28,7 +28,7 @@
 #include "sdkconfig.h"
 #include "bridge.h"
 
-#define LED_PIN 15
+#define LED_PIN 2
 #define TAG "BMX"
 
 // LED
@@ -51,16 +51,15 @@ static void led_pin_init() {
 
 // NVS
 
-esp_err_t read_write_nvs_value_str(const char* key, char* fallback) {
+esp_err_t read_write_nvs_value_str(const char* key, char* fallback, size_t l) {
     esp_err_t err;
     nvs_handle_t handle;
     err = nvs_open("storage",NVS_READWRITE, &handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG,"Error (%s) opening NVS handle. Falling back to default SSID and password...",esp_err_to_name(err));
+        ESP_LOGE(TAG,"Error (%s) opening NVS handle. Falling back to default...",esp_err_to_name(err));
         return err;
     } 
 
-    size_t l;
     err = nvs_get_str(handle, key, fallback, &l);
     switch (err) {
         case ESP_OK:
@@ -185,8 +184,8 @@ void wifi_init_sta(void)
     // load from nvs storage
     char ssid[33] = EXAMPLE_ESP_WIFI_SSID;
     char pass[65] = EXAMPLE_ESP_WIFI_PASS;
-    read_write_nvs_value_str("ssid",ssid);
-    read_write_nvs_value_str("pass",pass);
+    read_write_nvs_value_str("ssid",ssid, sizeof(ssid));
+    read_write_nvs_value_str("pass",pass, sizeof(pass));
 
     wifi_config_t wifi_config = {
         .sta = {
@@ -252,6 +251,11 @@ void init(void)
      */
     led_pin_init();
 
+    // we erase content of NVS if necessary
+#ifdef REINIT_NVS
+    // call it with something like: idf.py build -DCMAKE_C_FLAGS="-DREINIT_NVS"
+    ESP_ERROR_CHECK(nvs_flash_erase());
+#endif
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -267,7 +271,7 @@ void init(void)
 
 esp_err_t send_data(const _bme280_res* results) {
     char url[200] = "http://palantir/thermo/update-sensor.php"; // default
-    if (read_write_nvs_value_str("url", url) != ESP_OK) {
+    if (read_write_nvs_value_str("adress", url, sizeof(url)) != ESP_OK) {
         ESP_LOGE(TAG, "URl default: %s",url);
     }
     ESP_LOGI(TAG, "URl: %s",url);

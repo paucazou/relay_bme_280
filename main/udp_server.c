@@ -31,6 +31,7 @@
 #include <lwip/netdb.h>
 
 #include "bridge.h"
+#include "relay.h"
 
 
 struct Period {
@@ -132,24 +133,24 @@ bool is_valid_url(const char* str) {
         return false;
     }
 
-    // Convert first 4 characters to lowercase for case-insensitive comparison
+    // Convert first characters to lowercase for case-insensitive comparison
     char first_letters[9] = {0};
     for (int i = 0; i < 8; i++) {
         first_letters[i] = tolower(str[i]);
     }
 
     // Check if starts with "http"
-    if (strncmp(first_letters, "http://", 7) != 0 && strncmp(first_letters, "https://", 8) != 0) {
-        return false;
+    if (strncmp(first_letters, "http://", 7) == 0 || strncmp(first_letters, "https://", 8) == 0) {
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 
 static void udp_server_task(void *pvParameters)
 {
-    char rx_buffer[10];
+    char rx_buffer[200];
     char addr_str[128];
     int addr_family = (int)pvParameters;
     int ip_protocol = 0;
@@ -278,6 +279,7 @@ static void udp_server_task(void *pvParameters)
                         struct Period p;
                         if (create_period(&p, &rx_buffer[1])) {
                             xQueueSend(period_queue, &p, 0);
+                            ESP_LOGI(TAG, "Sending answer: %s", rx_buffer);
                             err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
                         }
                         else {
@@ -299,18 +301,21 @@ static void udp_server_task(void *pvParameters)
                         } else {
                             char addr[len];
                             strncpy(addr, &rx_buffer[1], len -1);
+                            addr[len-1] = '\0';
                             if (!is_valid_url(addr)) {
                                 ESP_LOGE(TAG, "'%s' is not a valid url.", addr);
+                                err = sendto(sock, "invalid", 7, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
                                 restart_udp_server = true;
                                 break;
-                            }
-                            save_string_nvs("adress", addr);
-                            ESP_LOGI(TAG, "New adress set: %s", addr);
-                            err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
-                            if (err < 0) {
-                                ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-                                restart_udp_server = true;
-                                break;
+                            } else {
+                                save_string_nvs("adress", addr);
+                                ESP_LOGI(TAG, "New adress set: %s", addr);
+                                err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
+                                if (err < 0) {
+                                    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                                    restart_udp_server = true;
+                                    break;
+                                }
                             }
                         }
                         break;
@@ -323,7 +328,7 @@ static void udp_server_task(void *pvParameters)
                         }
                         char ssid[33], pass[65];
                         strncpy(ssid, &rx_buffer[1], 32);
-                        strncpy(pass, &rx_buffer[34], 64);
+                        strncpy(pass, &rx_buffer[33], 64);
                         save_string_nvs("ssid", ssid);
                         save_string_nvs("pass", pass);
                         ESP_LOGI(TAG, "New ssid and password saved: %s - %s", ssid, pass);
@@ -333,6 +338,7 @@ static void udp_server_task(void *pvParameters)
                             restart_udp_server = true;
                             break;
                         }
+                        // TODO il faut redémarrer le wifi aussitôt !
 
                         break;
                     default:
@@ -369,17 +375,18 @@ void time_test() {
 
 
 
-static void transistor_switch(bool val) {
-    // I don't know why to reverve val, but well...
-    // maybe a problem with the relay
-    gpio_set_level(TRANSISTOR_PIN,!val);
-    ESP_LOGI(TAG,"Open? %d",gpio_get_level(TEST_PIN));
+static void relay_toggle() {
+    static bool is_open = false;
+    gpio_set_level(TRANSISTOR_PIN,is_open);
+    is_open = ! is_open;
+    //ESP_LOGI(TAG,"Open? %d",gpio_get_level(TEST_PIN));
 }
 
-static bool is_light_on() {
-    // true if light is on
+static bool is_relay_on() {
+    // true if relay is on
     //return !gpio_get_level(TEST_PIN);
-    return gpio_get_level(TRANSISTOR_PIN);
+    // relay is on if pin is off
+    return !gpio_get_level(TRANSISTOR_PIN);
 }
 
 static void pin_init() {
@@ -387,13 +394,14 @@ static void pin_init() {
   esp_rom_gpio_pad_select_gpio(LED_PIN);
   gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
 
-// transistor
+// relay 
   esp_rom_gpio_pad_select_gpio(TRANSISTOR_PIN);
   gpio_set_direction(TRANSISTOR_PIN, GPIO_MODE_INPUT_OUTPUT);
-  transistor_switch(false);
+  // first call: transistor is now off, relay is on
+  gpio_set_level(TRANSISTOR_PIN, false);
   // test3d
-  esp_rom_gpio_pad_select_gpio(TEST_PIN);
-  gpio_set_direction(TEST_PIN,GPIO_MODE_INPUT);
+  //esp_rom_gpio_pad_select_gpio(TEST_PIN);
+  //gpio_set_direction(TEST_PIN,GPIO_MODE_INPUT);
 }
 
 struct tm* fill_time() {
@@ -430,12 +438,13 @@ void light_manager(void *pvParameter) {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Error loading Period from NVS");
     } else {
-        char arr[10];
-        size_t size;
-        err = nvs_get_str(nvsh, "period", arr, &size);
+        //char arr[10];
+        size_t size = sizeof(p);
+        err = nvs_get_blob(nvsh, "period", &p, &size);
+        print_period(&p);
         switch (err) {
             case ESP_OK:
-                create_period(&p, arr);
+                //create_period(&p, arr); // probably useless when saved as a blob
                 ESP_LOGI(TAG, "Period loaded");
                 print_period(&p);
                 break;
@@ -461,8 +470,13 @@ void light_manager(void *pvParameter) {
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "Error %s opening NVS", esp_err_to_name(err));
             } else {
-                char arr[10] = { p.start_h, p.start_m, p.end_h, p.end_m };
-                err = nvs_set_str(nvsh, "period",arr);
+                /*
+                char arr[10] = { p.start_h, p.start_m, p.end_h, p.end_m , '\0'};
+                * TODO erreur ici: nvs enregistre chaque byte, mais si ce byte est égal à 0, il le considère comme la fin de la chaîne e
+                 * ne va pas plus loin. Il faut faire en sorte que tous les bytes soient enregistrés.
+                 * utiliser un set_blob à la place (et get blob de l'autre côté)
+                 */
+                err = nvs_set_blob(nvsh, "period",&p, sizeof(p));
                 ESP_LOGI(TAG, "NVS set period: %s",esp_err_to_name(err));
                 err = nvs_commit(nvsh);
                 ESP_LOGI(TAG, "NVS set period commit: %s",esp_err_to_name(err));
@@ -475,13 +489,9 @@ void light_manager(void *pvParameter) {
             ESP_LOGE(TAG, "Time not yet updated");
         } else {
             if (is_time_in(time, &p)) {
-                if (!is_light_on()) {
-                    transistor_switch(true);
-                    ESP_LOGI(TAG, "light on");
-                }
-            } else if (is_light_on()) {
-                transistor_switch(false);
-                ESP_LOGI(TAG, "light off");
+                switch_NC_relay(true);
+            } else {
+                switch_NC_relay(false);
             }
         }
         sleep(1);
