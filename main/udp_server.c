@@ -339,6 +339,10 @@ static void udp_server_task(void *pvParameters)
                             break;
                         }
                         // TODO il faut redémarrer le wifi aussitôt !
+                        const int sec = 10;
+                        ESP_LOGI(TAG, "Wifi reset. Restarting ESP-32 in %d seconds", sec);
+                        vTaskDelay((sec * 1000)/ portTICK_PERIOD_MS);
+                        esp_restart();
 
                         break;
                     default:
